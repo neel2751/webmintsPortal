@@ -20,7 +20,7 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
             throw new Error("Email and password are required.");
           }
 
-          const res = await fetch("http://localhost:3001/api/login", {
+          const res = await fetch("https://portal.webmints.com/api/login", {
             method: "POST",
             headers: {
               "Content-Type": "application/json",
