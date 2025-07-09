@@ -10,8 +10,13 @@ export async function POST(req) {
   const origin = headerList.get("origin");
   const apiKey = headerList.get("x-api-key");
 
+  const allowedOrigins = [
+    process.env.MAIN_SITE_URL, // e.g., https://subdomain.vercel.app
+    "http://localhost:3000", // allow this during local testing
+  ];
+
   // Security checks
-  if (!origin || origin !== process.env.MAIN_SITE_URL) {
+  if (!origin || !allowedOrigins.includes(origin)) {
     return Response.json({ error: "Invalid origin" }, { status: 403 });
   }
 

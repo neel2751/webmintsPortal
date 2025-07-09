@@ -11,7 +11,13 @@ export async function POST(req) {
   const origin = headerList.get("origin");
   const apiKey = headerList.get("x-api-key");
   // Security checks
-  if (!origin || origin !== process.env.MAIN_SITE_URL) {
+
+  const allowedOrigins = [
+    process.env.MAIN_SITE_URL, // e.g., https://subdomain.vercel.app
+    "http://localhost:3000", // allow this during local testing
+  ];
+
+  if (!origin || !allowedOrigins.includes(origin)) {
     return Response.json({ error: "Invalid origin" }, { status: 403 });
   }
 
@@ -107,6 +113,7 @@ export async function POST(req) {
       }
     });
     const uploadResults = await Promise.all(fileUploads);
+    console.log("Upload results:", uploadResults);
     const resumeKey = uploadResults.find(
       (result) => result.key && result.success
     ).key;
