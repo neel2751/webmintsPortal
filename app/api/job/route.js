@@ -4,30 +4,11 @@ import { connect } from "@/db/db";
 import SubmitJobApplicationsModel from "@/models/submitApplicationModel";
 import { generatePreSignedUrl } from "@/server/aws/awsUpload";
 import axios from "axios";
-import { headers } from "next/headers";
+import { apiGuard } from "@/lib/api-guard";
 
 export async function POST(req) {
-  const headerList = await headers();
-  const origin = headerList.get("origin");
-  const apiKey = headerList.get("x-api-key");
-  // Security checks
-
-  const allowedOrigins = [
-    process.env.MAIN_SITE_URL, // e.g., https://subdomain.vercel.app
-    "http://localhost:3000", // allow this during local testing
-  ];
-
-  if (!origin || !allowedOrigins.includes(origin)) {
-    return Response.json({ error: "Invalid origin" }, { status: 403 });
-  }
-
-  if (apiKey !== process.env.API_SECRET) {
-    return Response.json({ error: "Invalid API key" }, { status: 403 });
-  }
-
-  if (req.method !== "POST") {
-    return Response.json({ error: "Method not allowed" }, { status: 405 });
-  }
+  const denied = await apiGuard({ requireOrigin: true });
+  if (denied) return denied;
 
   await connect();
   const formData = await req.formData();

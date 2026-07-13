@@ -1,12 +1,19 @@
 "use client";
 import { FormProvider, useForm } from "react-hook-form";
 import {
+  FieldAiButton,
   FormCheckbox,
   FormDate,
+  FormEditor,
   FormImageUpload,
+  FormImageUploadAWS,
   FormInputNew,
+  FormInputTagField,
   FormMultiInput,
   FormRadio,
+  FormSelect,
+  FormStepForm,
+  FormSwitch,
   FormTextarea,
   URLInput,
 } from "@/components/form/form-field";
@@ -22,7 +29,7 @@ export function GlobalForm({
 }) {
   const method = useForm({
     defaultValues: initialValues || {},
-    shouldUnregister: true,
+    shouldUnregister: false,
   });
   const watchField = method.watch();
 
@@ -60,13 +67,50 @@ export function GlobalForm({
     return grouped;
   };
 
+  // based on the dependent field we have to change the current field value with logic
+  const dependentFields = (fields) => {
+    let deps = [];
+    fields.forEach((section) => {
+      section.fields.forEach((field) => {
+        if (field.dependentOn && field.generateValue) {
+          deps.push(field);
+        }
+      });
+    });
+    return deps;
+  };
+
+  // dependentFields.forEach((field) => {
+  //   const dependentValue = watchField[field.dependentOn];
+  //   if (dependentValue !== undefined) {
+  //     if (field.generateValue) {
+  //       const newValue = field.generateValue(dependentValue);
+  //       if (watchField[field.name] !== newValue) {
+  //         method.setValue(field.name, newValue);
+  //       }
+  //     }
+  //   }
+  // });
+
   return (
     <FormProvider {...method}>
       <form onSubmit={method.handleSubmit(onSubmit)} className="space-y-6">
         {groupedFields.map((section, index) => {
           const visible = filterVisibleFields(section.fields);
           const rows = groupIntoRows(visible);
-
+          const deps = dependentFields([section]);
+          deps.forEach((field) => {
+            const dependentValue = watchField[field.dependentOn];
+            if (dependentValue !== undefined) {
+              if (field.generateValue) {
+                const newValue = field.generateValue(dependentValue);
+                if (watchField[field.name] !== newValue) {
+                  if (typeof newValue !== "undefined")
+                    method.setValue(field.name, newValue);
+                }
+              }
+            }
+          });
           return (
             <div key={index} className="space-y-3">
               <h3 className="text-xl font-medium pb-2 font-grotesk tracking-tight">
@@ -102,6 +146,7 @@ export function GlobalForm({
                         <URLInput key={field.name} field={field} />
                       )}
                       {field.type === "radio" && <FormRadio field={field} />}
+                      {field.type === "select" && <FormSelect field={field} />}
                       {field.type === "checkbox" && (
                         <FormCheckbox field={field} />
                       )}
@@ -110,10 +155,24 @@ export function GlobalForm({
                       )}
                       {field.type === "date" && <FormDate field={field} />}
                       {field.type === "image" && (
-                        <FormImageUpload field={field} />
+                        <FormImageUploadAWS field={field} />
                       )}
+                      {field.type === "tag" && (
+                        <FormInputTagField field={field} />
+                      )}
+                      {field.type === "richtext" && (
+                        <FormEditor field={field} />
+                      )}
+                      {field.type === "switch" && <FormSwitch field={field} />}
                       {field.type === "multiple" && (
-                        <FormMultiInput field={field} />
+                        <>
+                          <FormMultiInput field={field} />
+                          {/* Field Ai for generating the AI Headline */}
+                          {field.ai && <FieldAiButton field={field} />}
+                        </>
+                      )}
+                      {field.type === "custom" && field.component && (
+                        <field.component {...field.props} />
                       )}
                     </div>
                   ))}

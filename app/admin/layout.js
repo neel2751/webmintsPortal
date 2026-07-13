@@ -1,16 +1,5 @@
-"use client";
-import Navbar from "@/components/navbar/navbar";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { SessionProvider } from "next-auth/react";
+import PortalShell from "@/components/layout/portal-shell";
 
-const queryClient = new QueryClient();
-
-export default function DashboardLayout({ children }) {
-  return (
-    <SessionProvider>
-      <QueryClientProvider client={queryClient}>
-        <Navbar children={children} />
-      </QueryClientProvider>
-    </SessionProvider>
-  );
+export default function AdminLayout({ children }) {
+  return <PortalShell>{children}</PortalShell>;
 }

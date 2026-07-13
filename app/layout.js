@@ -27,7 +27,7 @@ export default function RootLayout({ children }) {
       >
         <SessionProvider>
           {children}
-          <UploadWidget />
+          {/* <UploadWidget /> */}
         </SessionProvider>
         <Toaster />
       </body>

@@ -2,31 +2,11 @@
 
 import { connect } from "@/db/db";
 import FormSubmissionModel from "@/models/FormSubmissionModel";
-import { headers } from "next/headers";
+import { apiGuard } from "@/lib/api-guard";
 
 export async function POST(req) {
-  console.log("Received request in submit-form API");
-  const headerList = await headers();
-  const origin = headerList.get("origin");
-  const apiKey = headerList.get("x-api-key");
-
-  const allowedOrigins = [
-    process.env.MAIN_SITE_URL, // e.g., https://subdomain.vercel.app
-    "http://localhost:3000", // allow this during local testing
-  ];
-
-  // Security checks
-  if (!origin || !allowedOrigins.includes(origin)) {
-    return Response.json({ error: "Invalid origin" }, { status: 403 });
-  }
-
-  if (apiKey !== process.env.API_SECRET) {
-    return Response.json({ error: "Invalid API key" }, { status: 403 });
-  }
-
-  if (req.method !== "POST") {
-    return Response.json({ error: "Method not allowed" }, { status: 405 });
-  }
+  const denied = await apiGuard({ requireOrigin: true });
+  if (denied) return denied;
 
   await connect();
 

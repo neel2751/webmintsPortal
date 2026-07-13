@@ -4,20 +4,12 @@ import React from "react";
 import Logout from "../logout/logout";
 import { useSession } from "next-auth/react";
 import Image from "next/image";
+import { navItemsForRole } from "@/lib/permissions";
 
 export default function Navbar({ children }) {
   const { data } = useSession();
 
-  const menu = [
-    { title: "Dashboard", href: "dashboard" },
-    { title: "Projects", href: "projects" },
-    { title: "Maintenance", href: "maintenance" },
-    { title: "Request", href: "requests" },
-  ];
-  const adminMenu = [...menu, { title: "Admin", href: "adminPanel" }];
-
-  const isAdmin = data?.user?.role === "admin";
-  const navItems = isAdmin ? adminMenu : menu;
+  const navItems = navItemsForRole(data?.user?.role);
 
   return (
     <div className="flex min-h-screen flex-col">
@@ -38,16 +30,15 @@ export default function Navbar({ children }) {
               Webmints
             </Link>
             <nav className="hidden md:flex gap-6">
-              {navItems &&
-                navItems?.map((item) => (
-                  <Link
-                    key={item?.title}
-                    href={item?.href}
-                    className="text-sm font-medium hover:text-indigo-600 transition-colors font-grotesk"
-                  >
-                    {item?.title}
-                  </Link>
-                ))}
+              {navItems.map((item) => (
+                <Link
+                  key={item.title}
+                  href={item.href}
+                  className="text-sm font-medium hover:text-indigo-600 transition-colors font-grotesk"
+                >
+                  {item.title}
+                </Link>
+              ))}
             </nav>
           </div>
           <div className="flex items-center gap-4">

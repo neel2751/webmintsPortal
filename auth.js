@@ -1,70 +1,56 @@
 import NextAuth from "next-auth";
 import Credentials from "next-auth/providers/credentials";
+import { authConfig } from "./auth.config";
+import { connect } from "@/db/db";
+import UserModel from "@/models/userModel";
+import { comparePassword } from "@/helper/bcryptPassword";
 
 export const { handlers, signIn, signOut, auth } = NextAuth({
+  ...authConfig,
   providers: [
     Credentials({
-      // You can specify which fields should be submitted, by adding keys to the `credentials` object.
-      // e.g. domain, username, password, 2FA token, etc.
       credentials: {
         email: {},
         password: {},
       },
       authorize: async (credentials) => {
         try {
-          const { email, password } = credentials;
+          const email = credentials?.email?.toLowerCase().trim();
+          const password = credentials?.password;
 
-          const sanitizeEmail = email?.toLowerCase();
-
-          if (!sanitizeEmail || !password) {
-            throw new Error("Email and password are required.");
+          if (!email || !password) {
+            return null;
           }
 
-          const res = await fetch("https://portal.webmints.com/api/login", {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify({
-              email: sanitizeEmail,
-              password,
-            }),
-          });
-          const data = await res.json();
+          await connect();
+          const user = await UserModel.findOne({ email });
 
-          if (!data?.success) {
-            throw new Error(data?.message || "Invalid login attempt.");
+          // Return the same generic failure (null) for an unknown email
+          // and a wrong password, so login attempts can't be used to
+          // discover which emails have accounts.
+          if (!user) {
+            return null;
           }
-          return data.user;
+          // Deactivated accounts cannot log in.
+          if (user.isActive === false) {
+            return null;
+          }
+          const isValid = await comparePassword(password, user.password);
+          if (!isValid) {
+            return null;
+          }
+
+          return {
+            id: user._id.toString(),
+            name: user.name,
+            email: user.email,
+            role: user.role,
+          };
         } catch (error) {
           console.error("Authorize error:", error.message);
+          return null;
         }
       },
     }),
   ],
-
-  callbacks: {
-    jwt({ token, user }) {
-      if (user) {
-        // User is available during sign-in
-        token.id = user.id;
-        token.email = user.email;
-        token.name = user.name || "";
-        token.role = user.role || "user"; // Default role if not provided
-      }
-      return token;
-    },
-    session({ session, token }) {
-      session.user.id = token.id;
-      session.user.email = token.email;
-      session.user.name = token.name;
-      session.user.role = token.role || "user"; // Default role if not provided
-      return session;
-    },
-  },
-  secret: process.env.NEXTAUTH_SECRET,
-
-  pages: {
-    signIn: "/auth/login",
-  },
 });

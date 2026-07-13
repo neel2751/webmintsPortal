@@ -1,11 +1,11 @@
 import { auth } from "@/auth";
+import { homeForRole } from "@/lib/permissions";
 import { redirect } from "next/navigation";
 
 export default async function page() {
-  const sessions = await auth();
-  if (sessions) {
-    redirect("/admin/dashboard");
-  } else {
+  const session = await auth();
+  if (!session?.user) {
     redirect("/auth/login");
   }
+  redirect(homeForRole(session.user.role));
 }

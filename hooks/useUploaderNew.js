@@ -1,168 +1,201 @@
 "use client";
 
+import { useState } from "react";
+import axios from "axios";
 import {
   completeMultipartUpload,
   createMultipartUpload,
   generatePreSignedUrl,
   getChuckPresignedUrl,
+  getPublicUrl,
+  listAlreadyUploadedParts,
 } from "@/server/aws/awsUpload";
-import { useUploadStore } from "@/store/uploadStore";
-import axios from "axios";
+import { addMedia } from "@/server/mediaServer/mediaServer";
 
 export function useUploaderNew() {
-  const addUpload = useUploadStore((s) => s.addUpload);
-  const updateProgress = useUploadStore((s) => s.updateProgress);
-  const markCompleted = useUploadStore((s) => s.markCompleted);
-  const markFailed = useUploadStore((s) => s.markFailed);
+  const [progressMap, setProgressMap] = useState({});
 
-  const setController = useUploadStore((s) => s.setController);
+  // IMPORTANT: Using just fileName (or a slug) makes it easier for
+  // the component to find the progress in the map.
+  const generateFileId = (fileName) => `${fileName}-${Date.now()}`;
 
-  const generateFileId = (fileName) => `${Date.now()}-${fileName}`;
-
-  const uploadFile = async (file, path = "uploads", access = "private") => {
+  const uploadFile = async (
+    file,
+    path = "uploads",
+    access = "private",
+    category = "general",
+    tags = []
+  ) => {
     const fileId = generateFileId(file.name);
 
-    addUpload({
-      id: fileId,
-      name: file.name,
-      rawFile: file, // store the raw file for potential resume
-      progress: 0,
-      status: "uploading",
-      path,
-      access,
-    });
+    // Initialize progress at 0
+    setProgressMap((prev) => ({ ...prev, [fileId]: 0 }));
 
+    // Choose upload method based on size (20MB threshold)
     if (file.size > 20 * 1024 * 1024) {
-      return await uploadInChunks(file, fileId, file.name, path, access);
+      return await uploadInChunks(
+        file,
+        fileId,
+        file.name,
+        path,
+        access,
+        category,
+        tags
+      );
     } else {
-      return await uploadDirect(file, fileId, file.name, path, access);
+      return await uploadDirect(
+        file,
+        fileId,
+        file.name,
+        path,
+        access,
+        category,
+        tags
+      );
     }
   };
 
-  const uploadDirect = async (file, fileId, name, path, access) => {
-    const { url, key } = await generatePreSignedUrl({
-      fileName: name,
-      contentType: file.type,
-      path,
-      access,
-    });
-
-    const controller = new AbortController();
-    setController(fileId, controller);
-
+  const uploadDirect = async (
+    file,
+    fileId,
+    name,
+    path,
+    access,
+    category,
+    tags
+  ) => {
     try {
+      const { url, key } = await generatePreSignedUrl({
+        fileName: name,
+        contentType: file.type,
+        path,
+        access,
+      });
+
       await axios.put(url, file, {
-        signals: controller.signal,
         headers: { "Content-Type": file.type },
         onUploadProgress: (progressEvent) => {
           const progress = Math.round(
             (progressEvent.loaded * 100) / progressEvent.total
           );
-          updateProgress(fileId, progress);
+          setProgressMap((prev) => ({ ...prev, [fileId]: progress }));
         },
       });
 
-      markCompleted(fileId, key);
-      return { success: true, fileId, key };
+      const fileUrl = await getPublicUrl({ key });
+      const mediaRes = await addMedia({
+        fileName: name,
+        fileType: file.type,
+        fileSize: file.size,
+        url: fileUrl.url,
+        key,
+        access,
+        status: "uploaded",
+        category,
+        tags,
+      });
+
+      setProgressMap((prev) => ({ ...prev, [fileId]: 100 }));
+
+      return {
+        success: true,
+        fileId,
+        key,
+        url: fileUrl.url,
+        fileName: name,
+        fileType: file.type,
+        mediaId: mediaRes.mediaId,
+      };
     } catch (error) {
-      if (axios.isCancel(error)) {
-        console.log("Upload canceled");
-      } else {
-        markFailed(fileId, error.message);
-      }
+      console.error("Direct Upload Error:", error);
+      setProgressMap((prev) => ({ ...prev, [fileId]: -1 })); // -1 indicates error
       return { success: false, error: error.message };
     }
   };
 
   const uploadInChunks = async (file, fileId, name, path, access) => {
-    const { uploadId, key } = await createMultipartUpload({
-      fileName: name,
-      contentType: file.type,
-      path,
-      access,
-    });
+    try {
+      const { uploadId, key } = await createMultipartUpload({
+        fileName: name,
+        contentType: file.type,
+        path,
+        access,
+      });
 
-    const chunkSize = 5 * 1024 * 1024;
-    const totalChunks = Math.ceil(file.size / chunkSize);
-    const parts = [];
+      const chunkSize = 5 * 1024 * 1024;
+      const totalChunks = Math.ceil(file.size / chunkSize);
+      const completedParts = new Array(totalChunks).fill(null);
+      const chunkIndices = Array.from({ length: totalChunks }, (_, i) => i);
 
-    for (let i = 0; i < totalChunks; i++) {
-      const start = i * chunkSize;
-      const end = Math.min(start + chunkSize, file.size);
-      const chunk = file.slice(start, end);
-      const controller = new AbortController();
-      setController(fileId, controller);
+      const uploadWorker = async () => {
+        while (chunkIndices.length > 0) {
+          const i = chunkIndices.shift();
+          const start = i * chunkSize;
+          const end = Math.min(start + chunkSize, file.size);
+          const chunk = file.slice(start, end);
 
-      try {
-        const presignedUrl = await getChuckPresignedUrl({
-          key,
-          uploadId,
-          partNumber: i + 1,
-        });
+          const presignedUrl = await getChuckPresignedUrl({
+            key,
+            uploadId,
+            partNumber: i + 1,
+          });
 
-        const response = await axios.put(presignedUrl, chunk, {
-          signal: controller.signal,
-          headers: { "Content-Type": file.type },
-          onUploadProgress: (progressEvent) => {
-            const percent = Math.round(
-              ((i + progressEvent.loaded / progressEvent.total) / totalChunks) *
-                100
-            );
-            updateProgress(fileId, percent);
-          },
-        });
+          const response = await axios.put(presignedUrl, chunk, {
+            onUploadProgress: (progressEvent) => {
+              const uploadedPartsCount = completedParts.filter(
+                (p) => p !== null
+              ).length;
+              const currentChunkProgress =
+                progressEvent.loaded / progressEvent.total;
+              const totalPercent = Math.round(
+                ((uploadedPartsCount + currentChunkProgress) / totalChunks) *
+                  100
+              );
+              setProgressMap((prev) => ({
+                ...prev,
+                [fileId]: Math.min(totalPercent, 99),
+              }));
+            },
+          });
 
-        parts.push({
-          ETag: response.headers.etag?.replace(/"/g, ""),
-          PartNumber: i + 1,
-        });
-      } catch (error) {
-        if (axios.isCancel(error)) {
-          console.log("Upload paused/canceled for:", file.name);
-        } else {
-          markFailed(fileId, error.message);
+          completedParts[i] = {
+            ETag: response.headers.etag.replace(/"/g, ""),
+            PartNumber: i + 1,
+          };
         }
-        return { success: false, error: error.message };
-      }
-    }
-
-    const response = await completeMultipartUpload({
-      uploadId,
-      parts,
-      key,
-    });
-
-    if (response.success) {
-      updateProgress(fileId, 100);
-      markCompleted(fileId, key);
-      return {
-        success: true,
-        fileId,
-        key,
-        url: response.url,
       };
-    } else {
-      markFailed(fileId, "Failed to complete multipart upload");
-      return { success: false, error: "Complete multipart upload failed" };
+
+      await Promise.all([uploadWorker(), uploadWorker(), uploadWorker()]); // 3 workers
+
+      const response = await completeMultipartUpload({
+        uploadId,
+        parts: completedParts,
+        key,
+      });
+
+      if (response.success) {
+        setProgressMap((prev) => ({ ...prev, [fileId]: 100 }));
+        return {
+          success: true,
+          fileId,
+          key,
+          url: response.url,
+          fileName: name,
+          fileType: file.type,
+        };
+      }
+    } catch (error) {
+      console.error("Chunk Upload Error:", error);
+      setProgressMap((prev) => ({ ...prev, [fileId]: -1 }));
+      return { success: false, error: error.message };
     }
   };
 
-  // handle mautiple file uploads
-  const uploadMultipleFiles = async (
-    files,
-    path = "uploads",
-    access = "private"
-  ) => {
-    const results = [];
-    for (const file of files) {
-      const result = await uploadFile(file, path, access);
-      results.push(result);
-    }
-    return results;
+  const uploadMultipleFiles = async (files, path, access) => {
+    return await Promise.all(
+      files.map((file) => uploadFile(file, path, access))
+    );
   };
 
-  return {
-    uploadFile,
-    uploadMultipleFiles,
-  };
+  return { uploadMultipleFiles, progressMap, uploadFile };
 }

@@ -10,7 +10,8 @@ import { toast } from "sonner";
 export default function AuthForm({ className }) {
   const { data: sessions } = useSession();
   if (sessions) {
-    redirect("/admin/dashboard");
+    // "/" sends each role to its own home page
+    redirect("/");
   }
 
   const field = [
@@ -67,7 +68,7 @@ export default function AuthForm({ className }) {
       });
     } else {
       toast.success("Logged in successfully!");
-      redirect("/admin/dashboard");
+      redirect("/");
     }
   };
 
@@ -92,14 +93,8 @@ export default function AuthForm({ className }) {
                     onSubmit={handleSubmit}
                     btnName={"Login"}
                   />
-                  <div className="flex gap-2 mt-4 font-grotesk text-sm text-center items-center justify-center">
-                    Don't have an account?{" "}
-                    <Link
-                      href={"/auth/register?next=true"}
-                      className="text-indigo-600 font-medium underline"
-                    >
-                      Register here
-                    </Link>
+                  <div className="flex gap-2 mt-4 font-grotesk text-sm text-center items-center justify-center text-muted-foreground">
+                    Need an account? Ask your administrator to create one.
                   </div>
                 </div>
               </div>

@@ -5,10 +5,14 @@ const nextConfig = {
       {
         source: "/api/:path*",
         headers: [
-          {
-            key: "Access-Control-Allow-Origin",
-            value: "http://localhost:3000", // Set your origin
-          },
+          // {
+          //   key: "Access-Control-Allow-Origin",
+          //   value: [
+          //     process.env.MAIN_SITE_URL, // e.g., https://subdomain.vercel.app
+          //     "http://localhost:3001", // allow this during local testing
+          //     "https://webmints.com", // allow this during local testing
+          //   ].join(", "),
+          // },
           {
             key: "Access-Control-Allow-Methods",
             value: "GET, POST, PUT, DELETE, OPTIONS",
@@ -21,9 +25,13 @@ const nextConfig = {
       },
     ];
   },
-  experimental: {
-    serverActions: true,
-    runtime: "edge", // 🔴 this will force all server actions to run in Edge!
+  images: {
+    remotePatterns: [
+      {
+        protocol: "https",
+        hostname: "cdcneel.s3.eu-west-2.amazonaws.com",
+      },
+    ],
   },
 };
 

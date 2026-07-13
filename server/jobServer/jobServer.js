@@ -2,9 +2,12 @@
 
 import { connect } from "@/db/db";
 import SubmitJobApplicationsModel from "@/models/submitApplicationModel";
+import { requireRole } from "@/lib/require-role";
+import { ADMIN_ONLY } from "@/lib/permissions";
 
 export async function getAllJobApplicantData() {
   try {
+    await requireRole(ADMIN_ONLY);
     await connect();
     const response = await SubmitJobApplicationsModel.find();
     if (!response || response.length === 0) {
@@ -19,6 +22,7 @@ export async function getAllJobApplicantData() {
 
 export async function updateJobStatus({ id, status }) {
   try {
+    await requireRole(ADMIN_ONLY);
     await connect();
     const response = await SubmitJobApplicationsModel.updateOne(
       { _id: id },
