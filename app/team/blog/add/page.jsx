@@ -3,6 +3,9 @@ import AddPost from "../addPost";
 import Link from "next/link";
 import { getActiveWebsites } from "@/server/websiteServer/websiteServer";
 
+// Auth-gated page — must not be statically prerendered at build time.
+export const dynamic = "force-dynamic";
+
 export default async function AddBlogPage() {
   const res = await getActiveWebsites();
   const websites = res.success ? JSON.parse(res.data) : [];

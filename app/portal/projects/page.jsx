@@ -1,3 +1,6 @@
+// Auth-gated page — must not be statically prerendered at build time.
+export const dynamic = "force-dynamic";
+
 import { format } from "date-fns";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
