@@ -10,7 +10,8 @@ export async function GET(req) {
   const url = new URL(req.url);
   const category = url.searchParams.get("category");
   try {
-    const blogs = await getBlogPosts(category, website._id);
+    // publishedOnly — drafts and archived posts never leave the CMS.
+    const blogs = await getBlogPosts(category, website._id, true);
     if (!blogs.success) {
       return withCors(
         Response.json({ error: "Failed to fetch blog posts" }, { status: 500 })

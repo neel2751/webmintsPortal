@@ -11,12 +11,16 @@ const headlineSchema = new Schema({
 
 const blogPostSchema = new Schema(
   {
-    // The website this post belongs to — posts are never shared across sites.
-    websiteId: {
-      type: Schema.Types.ObjectId,
-      ref: "Website",
+    // The websites this post is published to — one post can appear on
+    // several sites, but the public API only serves it to sites in this list.
+    websiteIds: {
+      type: [{ type: Schema.Types.ObjectId, ref: "Website" }],
       required: true,
       index: true,
+      validate: {
+        validator: (v) => Array.isArray(v) && v.length > 0,
+        message: "At least one website is required",
+      },
     },
     headlines: [headlineSchema],
     // title: { type: String, required: true },
@@ -65,7 +69,8 @@ const blogPostSchema = new Schema(
 );
 
 // Same slug may exist on different websites, never twice on the same one.
-blogPostSchema.index({ websiteId: 1, slug: 1 }, { unique: true });
+// (Multikey unique index: each websiteIds element + slug pair must be unique.)
+blogPostSchema.index({ websiteIds: 1, slug: 1 }, { unique: true });
 
 const BlogPostModel = models.BlogPost || model("BlogPost", blogPostSchema);
 export default BlogPostModel;

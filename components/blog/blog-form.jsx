@@ -1,5 +1,7 @@
 "use client";
 import React from "react";
+import { useRouter } from "next/navigation";
+import { toast } from "sonner";
 import { GlobalForm } from "../form/global-form";
 import { addBlogPost } from "@/server/blogServer/blogServer";
 import { generateBlogHeadlines } from "@/server/aiServer/ai-genetor";
@@ -8,25 +10,19 @@ import { SerpPreview } from "./serp-view";
 import { SeoScorePanel } from "./score-seo";
 import { FinalSeoSummary } from "./final-seo-summary";
 import { KeywordDensityPanel } from "./keyword-density";
+import { CategoryField } from "./category-field";
+import { WebsiteField } from "./website-field";
 
-const buildFields = (websites) => [
+const buildFields = (websites, categories) => [
   {
     title: "Blog Post Details",
     fields: [
       {
-        name: "websiteId",
-        labelText: "Website",
-        type: "select",
+        name: "websiteIds",
+        type: "custom",
         size: true,
-        placeholder: "Select website",
-        options: websites.map((site) => ({
-          value: site._id,
-          label: `${site.name} (${site.domain})`,
-        })),
-        helperText: "The post is published to this website only",
-        validationOptions: {
-          required: "Website is required",
-        },
+        component: WebsiteField,
+        props: { websites },
       },
       {
         name: "headlines",
@@ -101,10 +97,11 @@ const buildFields = (websites) => [
         type: "image",
         placeholder: "Upload Cover Image",
         acceptedFileTypes: { "image/*": [".jpeg", ".jpg", ".png", ".webp"] }, // we can accept the mp4 also
-        maxFileSize: 1024 * 1024 * 5, // 5 MB
+        maxFileSize: 1024 * 1024 * 1, // 1 MB — same cap as every blog image
         maxFiles: 1,
         access: "public",
         uploadPath: "blog",
+        helperText: "Maximum size: 1 MB",
         validationOptions: {
           required: "Cover Image is required",
         },
@@ -124,23 +121,13 @@ const buildFields = (websites) => [
           },
         },
       },
-      // category field as text
+      // category with existing-category suggestions (avoids duplicates)
       {
         name: "category",
-        labelText: "Category",
-        type: "text",
-        placeholder: "Enter Category",
-        validationOptions: {
-          required: "Category is required",
-          minLength: {
-            value: 3,
-            message: "Minimum 3 characters required",
-          },
-          maxLength: {
-            value: 50,
-            message: "Maximum 50 characters allowed",
-          },
-        },
+        type: "custom",
+        size: true,
+        component: CategoryField,
+        props: { categories },
       },
     ],
   },
@@ -188,7 +175,7 @@ const buildFields = (websites) => [
         maxFiles: 1,
         access: "public",
         uploadPath: "blog/og",
-        helperText: "Recommended size: 1200x630 pixels",
+        helperText: "Recommended size: 1200x630 pixels — maximum 1 MB",
         validationOptions: {
           required: "Open Graph is required",
         },
@@ -299,12 +286,43 @@ const buildFields = (websites) => [
   // },
 ];
 
-export default function BlogForm({ intitalData = {}, websites = [] }) {
-  const groupedFields = React.useMemo(() => buildFields(websites), [websites]);
+export default function BlogForm({
+  intitalData = {},
+  websites = [],
+  categories = [],
+}) {
+  const router = useRouter();
+  const [isSaving, setIsSaving] = React.useState(false);
+  const isEditing = Boolean(intitalData?._id);
+
+  const groupedFields = React.useMemo(
+    () => buildFields(websites, categories),
+    [websites, categories]
+  );
 
   const createBlogPost = async (data) => {
-    const res = await addBlogPost(data);
-    console.log("Blog post creation response:", res);
+    setIsSaving(true);
+    try {
+      const res = await addBlogPost(data);
+      if (res?.success) {
+        toast.success(
+          res.message ||
+            (isEditing
+              ? "Blog post updated successfully"
+              : "Blog post added successfully")
+        );
+        router.push("/team/blog");
+        router.refresh();
+      } else {
+        toast.error(
+          res?.error || res?.message || "Failed to save the blog post"
+        );
+      }
+    } catch (error) {
+      toast.error(error.message || "Failed to save the blog post");
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   return (
@@ -312,9 +330,10 @@ export default function BlogForm({ intitalData = {}, websites = [] }) {
       {/* {JSON.stringify(intitalData, null, 2)} */}
       <GlobalForm
         groupedFields={groupedFields}
-        submitButtonText="Add Blog Post"
+        btnName={isEditing ? "Update Blog Post" : "Add Blog Post"}
         onSubmit={createBlogPost}
         initialValues={intitalData}
+        isLoading={isSaving}
       />
     </div>
   );

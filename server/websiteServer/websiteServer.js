@@ -183,20 +183,40 @@ export async function migrateLegacyPostsToWebsite({ websiteId }) {
       return { success: false, message: "Website not found" };
     }
 
-    const result = await BlogPostModel.updateMany(
-      { $or: [{ websiteId: { $exists: false } }, { websiteId: null }] },
-      { $set: { websiteId } }
+    // Posts saved when a post belonged to a single website: move the old
+    // websiteId value into the websiteIds array.
+    const converted = await BlogPostModel.collection.updateMany(
+      { websiteId: { $exists: true }, websiteIds: { $exists: false } },
+      [
+        { $set: { websiteIds: ["$websiteId"] } },
+        { $unset: "websiteId" },
+      ]
     );
 
-    try {
-      await BlogPostModel.collection.dropIndex("slug_1");
-    } catch {
-      // Index already dropped (or never built) — nothing to do.
+    // Posts from before multi-website support: assign them to this website.
+    const assigned = await BlogPostModel.updateMany(
+      {
+        $or: [
+          { websiteIds: { $exists: false } },
+          { websiteIds: null },
+          { websiteIds: { $size: 0 } },
+        ],
+      },
+      { $set: { websiteIds: [websiteId] } }
+    );
+
+    // Drop superseded unique indexes so per-site slugs can coexist.
+    for (const indexName of ["slug_1", "websiteId_1_slug_1"]) {
+      try {
+        await BlogPostModel.collection.dropIndex(indexName);
+      } catch {
+        // Index already dropped (or never built) — nothing to do.
+      }
     }
 
     return {
       success: true,
-      message: `Assigned ${result.modifiedCount} legacy post(s) to ${website.name}`,
+      message: `Converted ${converted.modifiedCount} single-website post(s) and assigned ${assigned.modifiedCount} legacy post(s) to ${website.name}`,
     };
   } catch (error) {
     console.error("Error migrating legacy posts:", error);

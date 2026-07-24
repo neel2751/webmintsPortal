@@ -15,7 +15,8 @@ export async function GET(request) {
   const slug = searchParams.get("slug");
   const category = searchParams.get("category");
   try {
-    const posts = await getRelatedPosts(category, slug, website._id);
+    // publishedOnly — related lists must not leak drafts.
+    const posts = await getRelatedPosts(category, slug, website._id, true);
     return withCors(
       new Response(
         JSON.stringify({

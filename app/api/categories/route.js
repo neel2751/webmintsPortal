@@ -7,7 +7,8 @@ export async function GET() {
   if (denied) return withCors(denied);
 
   try {
-    const categories = await getCategories(website._id);
+    // publishedOnly — only categories with live posts on this website.
+    const categories = await getCategories(website._id, true);
     return withCors(Response.json({ categories }, { status: 200 }));
   } catch (error) {
     console.error("Error in Categories GET API:", error);

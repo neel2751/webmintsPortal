@@ -22,7 +22,8 @@ export async function GET(request, { params }) {
   const cookieStore = await cookies();
 
   try {
-    const blog = await getBlogPostBySlug(slug, website._id);
+    // publishedOnly — a draft's slug must 404 on the public site.
+    const blog = await getBlogPostBySlug(slug, website._id, true);
     if (!blog.success) {
       return withCors(
         Response.json({ error: "Blog post not found" }, { status: 404 })

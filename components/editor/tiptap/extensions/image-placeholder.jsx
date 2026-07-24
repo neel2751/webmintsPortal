@@ -162,7 +162,7 @@ function ImagePlaceholderComponent(props) {
                 Click to upload or drag and drop
               </p>
               <p className="text-xs text-muted-foreground">
-                SVG, PNG, JPG or GIF
+                PNG, JPG, WEBP or GIF — max 1 MB
               </p>
             </div>
           </div>

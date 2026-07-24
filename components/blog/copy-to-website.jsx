@@ -25,7 +25,7 @@ import { copyBlogToWebsite } from "@/server/blogServer/blogServer";
 export default function CopyToWebsiteButton({
   postId,
   postTitle,
-  currentWebsiteId,
+  currentWebsiteIds = [],
   websites = [],
 }) {
   const [open, setOpen] = useState(false);
@@ -33,9 +33,8 @@ export default function CopyToWebsiteButton({
   const [isCopying, setIsCopying] = useState(false);
   const router = useRouter();
 
-  const targets = websites.filter(
-    (site) => site._id !== String(currentWebsiteId || "")
-  );
+  const currentIds = (currentWebsiteIds || []).map(String);
+  const targets = websites.filter((site) => !currentIds.includes(site._id));
 
   const handleCopy = async () => {
     if (!targetId) {

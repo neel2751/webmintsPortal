@@ -43,13 +43,26 @@ export async function addBlogPost(data) {
     await requireRole(TEAM_ROLES);
     await connect();
 
-    if (!data.websiteId || !isValidObjectId(data.websiteId)) {
-      return { success: false, error: "Please select a website for this post" };
+    const websiteIds = Array.isArray(data.websiteIds)
+      ? data.websiteIds.filter(Boolean)
+      : [];
+    if (websiteIds.length === 0 || !websiteIds.every(isValidObjectId)) {
+      return {
+        success: false,
+        error: "Please select at least one website for this post",
+      };
     }
-    const websiteExists = await WebsiteModel.exists({ _id: data.websiteId });
-    if (!websiteExists) {
-      return { success: false, error: "Selected website not found" };
+    const websiteCount = await WebsiteModel.countDocuments({
+      _id: { $in: websiteIds },
+    });
+    if (websiteCount !== websiteIds.length) {
+      return { success: false, error: "One of the selected websites was not found" };
     }
+    data.websiteIds = websiteIds;
+
+    // The "Publish Now" switch decides whether the post goes live or
+    // stays a draft — the public API only serves published posts.
+    data.status = data.isPublished ? "published" : "draft";
 
     const slug = data.headlines[0]
       .toLowerCase()
@@ -78,13 +91,13 @@ export async function addBlogPost(data) {
     }
 
     const duplicate = await BlogPostModel.findOne({
-      websiteId: data.websiteId,
+      websiteIds: { $in: websiteIds },
       slug,
     });
     if (duplicate) {
       return {
         success: false,
-        error: "A post with this title already exists on that website",
+        error: "A post with this title already exists on one of those websites",
       };
     }
 
@@ -147,23 +160,27 @@ export async function updateBlogPost(postId, data) {
       data.slug = slug;
     }
 
-    // Keep the post on its website unless a valid new one was chosen.
-    if (data.websiteId && !isValidObjectId(data.websiteId)) {
-      return { success: false, message: "Invalid website selected" };
+    // Keep the post on its websites unless a valid new selection was made.
+    const nextWebsiteIds =
+      Array.isArray(data.websiteIds) && data.websiteIds.length > 0
+        ? data.websiteIds.filter(Boolean)
+        : existingPost.websiteIds;
+    if (!nextWebsiteIds?.length || !nextWebsiteIds.every(isValidObjectId)) {
+      return { success: false, message: "Please select at least one website" };
     }
-    data.websiteId = data.websiteId || existingPost.websiteId;
+    data.websiteIds = nextWebsiteIds;
 
     // findByIdAndUpdate skips unique validation, so check the per-site
     // slug collision explicitly.
     const slugClash = await BlogPostModel.findOne({
-      websiteId: data.websiteId,
+      websiteIds: { $in: nextWebsiteIds },
       slug: data.slug,
       _id: { $ne: postId },
     });
     if (slugClash) {
       return {
         success: false,
-        message: "A post with this title already exists on that website",
+        message: "A post with this title already exists on one of those websites",
       };
     }
 
@@ -258,7 +275,13 @@ export async function pickHeadline(headlines) {
   return weighted[0]; // fallback
 }
 
-export async function getBlogPosts(category = "All", websiteId = null) {
+// publishedOnly is set by the public API routes — drafts and archived
+// posts must never reach the external websites. Team pages pass false.
+export async function getBlogPosts(
+  category = "All",
+  websiteId = null,
+  publishedOnly = false
+) {
   try {
     await connect();
     let query = {};
@@ -266,7 +289,11 @@ export async function getBlogPosts(category = "All", websiteId = null) {
       query.category = category;
     }
     if (websiteId) {
-      query.websiteId = websiteId;
+      query.websiteIds = websiteId;
+    }
+    if (publishedOnly) {
+      query.status = "published";
+      query.isDeleted = { $ne: true };
     }
     const posts = await BlogPostModel.find(query).sort({ createdAt: -1 });
     // we have to pick one headline to show for each post
@@ -289,12 +316,20 @@ export async function getBlogPosts(category = "All", websiteId = null) {
   }
 }
 
-export async function getBlogPostBySlug(slug, websiteId = null) {
+export async function getBlogPostBySlug(
+  slug,
+  websiteId = null,
+  publishedOnly = false
+) {
   try {
     await connect();
     const query = { slug };
     if (websiteId) {
-      query.websiteId = websiteId;
+      query.websiteIds = websiteId;
+    }
+    if (publishedOnly) {
+      query.status = "published";
+      query.isDeleted = { $ne: true };
     }
     const data = await BlogPostModel.findOne(query);
     //we have to pick one headline to show
@@ -375,14 +410,19 @@ export async function promoteHeadline(postId, winnerIndex) {
 
 // Categories are a shared taxonomy: call with no argument for the global
 // list (authoring suggestions); pass a websiteId to get only the categories
-// actually used by that site's posts (public API).
-export async function getCategories(websiteId = null) {
+// actually used by that site's posts (public API — published posts only).
+export async function getCategories(websiteId = null, publishedOnly = false) {
   try {
     await connect();
-    const categories = await BlogPostModel.distinct(
-      "category",
-      websiteId ? { websiteId } : {}
-    );
+    const filter = {};
+    if (websiteId) {
+      filter.websiteIds = websiteId;
+    }
+    if (publishedOnly) {
+      filter.status = "published";
+      filter.isDeleted = { $ne: true };
+    }
+    const categories = await BlogPostModel.distinct("category", filter);
     return {
       success: true,
       categories: JSON.parse(JSON.stringify(categories)),
@@ -393,16 +433,24 @@ export async function getCategories(websiteId = null) {
   }
 }
 
-export async function getRelatedPosts(category, slug, websiteId = null) {
+export async function getRelatedPosts(
+  category,
+  slug,
+  websiteId = null,
+  publishedOnly = false
+) {
   await connect();
 
   const query = {
     category: category,
     slug: { $ne: slug },
-    // status: "published",
   };
   if (websiteId) {
-    query.websiteId = websiteId;
+    query.websiteIds = websiteId;
+  }
+  if (publishedOnly) {
+    query.status = "published";
+    query.isDeleted = { $ne: true };
   }
   return await BlogPostModel.find(query)
     .sort({ createdAt: -1 })
@@ -426,7 +474,11 @@ export async function copyBlogToWebsite(postId, targetWebsiteId) {
     if (!source) {
       return { success: false, message: "Blog post not found" };
     }
-    if (String(source.websiteId) === String(targetWebsiteId)) {
+    if (
+      (source.websiteIds || []).some(
+        (id) => String(id) === String(targetWebsiteId)
+      )
+    ) {
       return { success: false, message: "Post already belongs to that website" };
     }
 
@@ -439,7 +491,7 @@ export async function copyBlogToWebsite(postId, targetWebsiteId) {
     }
 
     const clash = await BlogPostModel.findOne({
-      websiteId: targetWebsiteId,
+      websiteIds: targetWebsiteId,
       slug: source.slug,
     });
     if (clash) {
@@ -455,7 +507,7 @@ export async function copyBlogToWebsite(postId, targetWebsiteId) {
     delete doc.updatedAt;
     delete doc.__v;
 
-    doc.websiteId = targetWebsiteId;
+    doc.websiteIds = [targetWebsiteId];
     doc.headlines = source.headlines
       .filter((h) => !h.isDeleted)
       .map((h) => ({ text: h.text }));
@@ -471,6 +523,45 @@ export async function copyBlogToWebsite(postId, targetWebsiteId) {
     return { success: true, message: `Copied to ${target.name} as a draft` };
   } catch (error) {
     console.error("Error copying blog post:", error);
+    return { success: false, message: error.message };
+  }
+}
+
+// Publish / unpublish straight from the blog list — no need to open the
+// edit form just to flip the status.
+export async function setBlogPostStatus(postId, status) {
+  try {
+    await requireRole(TEAM_ROLES);
+    await connect();
+
+    if (!isValidObjectId(postId)) {
+      return { success: false, message: "Invalid post id" };
+    }
+    if (!["draft", "published", "archived"].includes(status)) {
+      return { success: false, message: "Invalid status" };
+    }
+
+    const post = await BlogPostModel.findByIdAndUpdate(
+      postId,
+      { status },
+      { new: true }
+    );
+    if (!post) {
+      return { success: false, message: "Blog post not found" };
+    }
+
+    revalidatePath("/team/blog/");
+    return {
+      success: true,
+      message:
+        status === "published"
+          ? "Post published — it is now live on its website(s)"
+          : status === "draft"
+          ? "Post moved back to draft — removed from the website(s)"
+          : "Post archived",
+    };
+  } catch (error) {
+    console.error("Error updating blog post status:", error);
     return { success: false, message: error.message };
   }
 }
